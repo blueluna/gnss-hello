@@ -36,8 +36,13 @@ fn parse_nmea(data: &[u8], position: usize) -> usize
             println!("NMEA {}", sentence);
             position + consumed
         }
-        Err(e) => {
-            println!("NMEA error {}", e);
+        Err(error) => {
+            match error {
+                mini_nmea::Error::NotEnoughData => (),
+                _ => {
+                    println!("NMEA error {}", error);
+                }
+            }
             position
         }
     }
@@ -66,8 +71,13 @@ fn parse_ubx(data: &[u8], position: usize) -> usize
                 },
             }
         }
-        Err(_e) => {
-            // println!("UBX error {}", e);
+        Err(error) => {
+            match error {
+                ublox::ParserError::MoreDataRequired{..} => (),
+                _ => {
+                    println!("UBX error {}", error);
+                }
+            }
         }
     }
     position + consumed
@@ -126,7 +136,7 @@ pub fn main() -> io::Result<()> {
 
 
     let mut timer = TimerFd::new(ClockId::Monotonic).unwrap();
-    timer.set_timeout_interval(&Duration::from_secs(3600)).unwrap();
+    timer.set_timeout_interval(&Duration::from_secs(120)).unwrap();
 
     poll.registry()
         .register(&mut serial_port, SERIAL_TOKEN, Interest::READABLE)?;

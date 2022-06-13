@@ -139,7 +139,7 @@ dependencies = [
 [[package]]
 name = "mini-nmea"
 version = "0.1.0"
-source = "git+https://gitlab.com/blueluna/mini-nmea.git#f3550f3bcd7216ca61dbfe5163d63dc206a9b6ff"
+source = "git+https://gitlab.com/blueluna/mini-nmea.git#3f420cbe7ccd3ea0833bf6635c4052977ab81010"
 dependencies = [
  "chrono",
  "mini-nmea-macro",
@@ -148,7 +148,7 @@ dependencies = [
 [[package]]
 name = "mini-nmea-macro"
 version = "0.1.0"
-source = "git+https://gitlab.com/blueluna/mini-nmea.git#f3550f3bcd7216ca61dbfe5163d63dc206a9b6ff"
+source = "git+https://gitlab.com/blueluna/mini-nmea.git#3f420cbe7ccd3ea0833bf6635c4052977ab81010"
 dependencies = [
  "proc-macro2",
  "quote",
