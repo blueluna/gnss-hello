@@ -1,6 +1,7 @@
+mod gnss;
+mod error;
 
 use bbqueue::BBBuffer;
-use chrono::prelude::*;
 use mio::{Events, Interest, Poll, Token};
 use mio_serial::SerialPortBuilderExt;
 use mio_timerfd::{ClockId, TimerFd};
@@ -9,111 +10,11 @@ use std::io;
 use std::io::{Read, Write};
 use std::time::Duration;
 use std::str;
-use mini_nmea;
-use ublox;
 
 const SERIAL_TOKEN: Token = Token(0);
 const TIMER_TOKEN: Token = Token(1);
-
 const DEFAULT_TTY: &str = "/dev/ttyUSB0";
-
 const DEFAULT_BAUD: u32 = 9600;
-
-fn nmea_start_position(data: &[u8]) -> Option<usize>
-{
-    for n in 0..data.len() {
-        if data[n] == b'$' {
-            return Some(n);
-        }
-    }
-    return None;
-}
-
-fn parse_nmea(data: &[u8], position: usize) -> usize
-{
-    match mini_nmea::Sentence::parse(&data[position..]) {
-        Ok((sentence, consumed)) => {
-            println!("NMEA {}", sentence);
-            position + consumed
-        }
-        Err(error) => {
-            match error {
-                mini_nmea::Error::NotEnoughData => (),
-                _ => {
-                    println!("NMEA error {}", error);
-                }
-            }
-            position
-        }
-    }
-}
-
-fn parse_ubx(data: &[u8], position: usize) -> usize
-{
-    use ublox::{PacketRef, GpsFix};
-    let (result, consumed) = ublox::parse_slice(&data[position..]);
-    match result {
-        Ok(packet) => {
-            match packet {
-                PacketRef::NavPosVelTime(navigation) => {
-                    let fix_type = navigation.fix_type();
-                    let has_time = fix_type == GpsFix::Fix3D
-                        || fix_type == GpsFix::GPSPlusDeadReckoning
-                        || fix_type == GpsFix::TimeOnlyFix;
-                    if has_time {
-                        if let Ok(dt) = DateTime::<Utc>::try_from(&navigation) {
-                            println!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:09}", dt.year(), dt.month(), dt.day(), dt.hour(), dt.minute(), dt.second(), dt.nanosecond());
-                        }
-                    }
-                }
-                _ => {
-                    println!("UBX {:?}", packet);
-                },
-            }
-        }
-        Err(error) => {
-            match error {
-                ublox::ParserError::MoreDataRequired{..} => (),
-                _ => {
-                    println!("UBX error {}", error);
-                }
-            }
-        }
-    }
-    position + consumed
-}
-
-fn parse_data(data: &[u8]) -> usize
-{
-    let nmea_start = nmea_start_position(data);
-    let ubx_start = match ublox::find_sync_position(data) {
-        Ok(position) => {
-            Some(position)
-        }
-        Err(_) => {
-            None
-        }
-    };
-
-    let consumed = match (nmea_start, ubx_start) {
-        (None, None) => { 0 },
-        (Some(nmea_position), None) => {
-            parse_nmea(data, nmea_position)
-        }
-        (None, Some(ubx_position)) => {
-            parse_ubx(data, ubx_position)
-        }
-        (Some(nmea_position), Some(ubx_position)) => {
-            if nmea_position < ubx_position {
-                parse_nmea(data, nmea_position)
-            }
-            else {
-                parse_ubx(data, ubx_position)
-            }
-        }
-    };
-    consumed
-}
 
 pub fn main() -> io::Result<()> {
     let mut args = env::args();
@@ -145,6 +46,8 @@ pub fn main() -> io::Result<()> {
     let _ = serial_port.write(&[0xff]);
     let combined = &mut [0u8; 1024];
 
+    let mut ublox_device = crate::gnss::UbloxDevice::new();
+
     loop {
         poll.poll(&mut events, None)?;
         for event in events.iter() {
@@ -162,7 +65,7 @@ pub fn main() -> io::Result<()> {
                                     let b_end = a_end + b.len();
                                     combined[..a_end].clone_from_slice(a);
                                     combined[a_end..b_end].clone_from_slice(b);
-                                    let consumed = parse_data(&combined[..b_end]);
+                                    let consumed = ublox_device.parse(&combined[..b_end]);
                                     read_grant.release(consumed);
                                 }
                             }
